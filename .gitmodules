@@ -1,0 +1,3 @@
+[submodule "agents/every"]
+	path = agents/every
+	url = https://github.com/EveryInc/compound-engineering-plugin

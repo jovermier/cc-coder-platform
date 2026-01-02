@@ -1,0 +1,201 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-dev-platform/schemas/ai-config.schema.json",
+  "title": "AI Platform Configuration",
+  "description": "Configuration file for AI platform integration in project repositories",
+  "type": "object",
+  "required": ["platformRepo", "stack"],
+  "properties": {
+    "platformRepo": {
+      "type": "string",
+      "format": "uri",
+      "description": "GitHub repository URL for the central AI platform",
+      "examples": [
+        "github.com/mycritters/ai-dev-platform",
+        "https://github.com/mycritters/ai-dev-platform"
+      ]
+    },
+    "platformVersion": {
+      "type": "string",
+      "description": "Version, branch, or tag to use from the platform repository",
+      "default": "main",
+      "examples": ["main", "v1.0.0", "develop"]
+    },
+    "stack": {
+      "type": "object",
+      "description": "Technology stack configuration for the project",
+      "properties": {
+        "frontend": {
+          "type": "string",
+          "enum": ["nextjs", "react", "vue", "svelte", "solid", "angular"],
+          "description": "Frontend framework"
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["go", "node", "python", "rust", "java", "dotnet"],
+          "description": "Backend language/runtime"
+        },
+        "api": {
+          "type": "string",
+          "enum": ["graphql", "rest", "grpc", "tRPC"],
+          "description": "API architecture style"
+        },
+        "database": {
+          "type": "string",
+          "enum": ["postgresql", "mysql", "mongodb", "sqlite", "redis", "dynamodb"],
+          "description": "Primary database"
+        },
+        "testing": {
+          "type": "object",
+          "properties": {
+            "e2e": {
+              "type": "string",
+              "enum": ["playwright", "cypress", "puppeteer", "selenium"],
+              "description": "E2E testing framework"
+            },
+            "unit": {
+              "type": "string",
+              "enum": ["jest", "vitest", "mocha", "pytest", "go-test"],
+              "description": "Unit testing framework"
+            }
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "description": "AI agent behavior rules and constraints",
+      "properties": {
+        "reuseBeforeCreate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require agents to search for existing code before creating new implementations"
+        },
+        "requireArchitecturePlan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require an architecture plan document before feature implementation"
+        },
+        "requirePlaywrightTests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require Playwright E2E tests for all feature changes"
+        },
+        "requireCodeReview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require AI code review before merging"
+        },
+        "allowBreakingChanges": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether agents can propose breaking changes without explicit approval"
+        }
+      }
+    },
+    "reviewers": {
+      "type": "object",
+      "description": "Configure which AI reviewers should run for this project",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "security-sentinel",
+              "performance-oracle",
+              "architecture-strategist",
+              "data-integrity-guardian",
+              "code-simplicity-reviewer",
+              "nextjs-reviewer",
+              "go-reviewer",
+              "graphql-reviewer"
+            ]
+          },
+          "description": "List of enabled reviewer agents"
+        },
+        "parallel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run reviewers in parallel (faster) or sequentially"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "description": "Custom path configurations for the project",
+      "properties": {
+        "frontend": {
+          "type": "string",
+          "description": "Path to frontend code",
+          "default": "frontend/ or web/"
+        },
+        "backend": {
+          "type": "string",
+          "description": "Path to backend code",
+          "default": "backend/ or api/"
+        },
+        "tests": {
+          "type": "string",
+          "description": "Path to test files",
+          "default": "tests/ or __tests__/"
+        }
+      }
+    },
+    "integrations": {
+      "type": "object",
+      "description": "External service integrations",
+      "properties": {
+        "github": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "autoMerge": {
+              "type": "boolean",
+              "default": false,
+              "description": "Allow AI to auto-merge passing PRs"
+            }
+          }
+        },
+        "slack": {
+          "type": "object",
+          "properties": {
+            "webhook": {
+              "type": "string",
+              "format": "uri",
+              "description": "Slack webhook for PR notifications"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "platformRepo": "github.com/mycritters/ai-dev-platform",
+      "platformVersion": "main",
+      "stack": {
+        "frontend": "nextjs",
+        "backend": "go",
+        "api": "graphql",
+        "database": "postgresql"
+      },
+      "rules": {
+        "reuseBeforeCreate": true,
+        "requireArchitecturePlan": true,
+        "requirePlaywrightTests": true
+      },
+      "reviewers": {
+        "enabled": [
+          "nextjs-reviewer",
+          "go-reviewer",
+          "graphql-reviewer",
+          "security-sentinel"
+        ]
+      }
+    }
+  ]
+}

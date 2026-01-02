@@ -1,0 +1,377 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-dev-platform/schemas/repo-map.schema.json",
+  "title": "Repository Structure Map",
+  "description": "Documents the organization of services, utilities, and patterns in a codebase for AI agent context",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for compatibility",
+      "default": "1.0"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Repository metadata",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief project description"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this map was last updated"
+        }
+      }
+    },
+    "services": {
+      "type": "object",
+      "description": "Domain services and their locations",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["location"],
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "File path or directory where the service lives",
+            "examples": ["backend/auth/", "backend/services/user/"]
+          },
+          "responsibilities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "What this service is responsible for",
+            "examples": [["login", "session validation", "password reset"]]
+          },
+          "reuseRequired": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether new features must use this service vs creating new code"
+          },
+          "apis": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string", "enum": ["graphql", "rest", "grpc"] },
+                "endpoint": { "type": "string" }
+              }
+            },
+            "description": "APIs exposed by this service"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Other services this depends on"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Additional context for AI agents"
+          }
+        }
+      }
+    },
+    "utilities": {
+      "type": "array",
+      "description": "Shared utility functions and helpers",
+      "items": {
+        "type": "object",
+        "required": ["location", "purpose"],
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "File path or directory",
+            "examples": ["backend/utils/errors.go", "shared/lib/formatters/"]
+          },
+          "purpose": {
+            "type": "string",
+            "description": "What this utility does",
+            "examples": ["Error handling and wrapping", "Date formatting utilities"]
+          },
+          "exports": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Key functions/classes exported"
+          },
+          "reuseRequired": {
+            "type": "boolean",
+            "default": true,
+            "description": "Prefer this utility over creating new code"
+          }
+        }
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "description": "Architectural and coding patterns used in the codebase",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Pattern name",
+            "examples": ["service-layer", "repository-pattern", "factory-pattern"]
+          },
+          "description": {
+            "type": "string",
+            "description": "How the pattern is used"
+          },
+          "example": {
+            "type": "string",
+            "description": "Example code or file reference"
+          },
+          "whenToUse": {
+            "type": "string",
+            "description": "When agents should apply this pattern"
+          }
+        }
+      }
+    },
+    "components": {
+      "type": "object",
+      "description": "Reusable UI components (for frontend projects)",
+      "properties": {
+        "atoms": {
+          "type": "array",
+          "description": "Smallest UI building blocks",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "location": { "type": "string" },
+              "props": { "type": "string", "description": "Brief prop description" }
+            }
+          }
+        },
+        "molecules": {
+          "type": "array",
+          "description": "Combinations of atoms",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "location": { "type": "string" },
+              "composedOf": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "organisms": {
+          "type": "array",
+          "description": "Complex UI sections",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "location": { "type": "string" },
+              "page": { "type": "string", "description": "Where used" }
+            }
+          }
+        }
+      }
+    },
+    "dataModels": {
+      "type": "object",
+      "description": "Database schemas and models",
+      "properties": {
+        "entities": {
+          "type": "object",
+          "description": "Core data entities",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "table": { "type": "string", "description": "Database table name" },
+              "model": { "type": "string", "description": "Model file location" },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "type": { "type": "string" },
+                    "nullable": { "type": "boolean" },
+                    "indexed": { "type": "boolean" }
+                  }
+                }
+              },
+              "relations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "to": { "type": "string" },
+                    "type": { "type": "string", "enum": ["one-to-one", "one-to-many", "many-to-many"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "routes": {
+      "type": "array",
+      "description": "API routes and endpoints",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"] },
+          "handler": { "type": "string", "description": "Handler function location" },
+          "auth": { "type": "boolean", "description": "Requires authentication" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "conventions": {
+      "type": "object",
+      "description": "Code conventions and standards",
+      "properties": {
+        "naming": {
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "string",
+              "enum": ["kebab-case", "camelCase", "PascalCase", "snake_case"],
+              "description": "File naming convention"
+            },
+            "variables": {
+              "type": "string",
+              "enum": ["camelCase", "PascalCase", "snake_case"],
+              "description": "Variable naming convention"
+            },
+            "constants": {
+              "type": "string",
+              "enum": ["UPPER_SNAKE_CASE", "PascalCase"],
+              "description": "Constant naming convention"
+            }
+          }
+        },
+        "structure": {
+          "type": "object",
+          "properties": {
+            "groupBy": {
+              "type": "string",
+              "enum": ["feature", "layer", "type"],
+              "description": "How code is organized"
+            },
+            "maxFileLines": {
+              "type": "number",
+              "description": "Soft limit for file length"
+            },
+            "maxFunctionLines": {
+              "type": "number",
+              "description": "Soft limit for function length"
+            }
+          }
+        },
+        "imports": {
+          "type": "object",
+          "properties": {
+            "order": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Import group order",
+              "example": ["stdlib", "external", "internal"]
+            },
+            "alias": {
+              "type": "object",
+              "description": "Import alias conventions"
+            }
+          }
+        }
+      }
+    },
+    "forbiddenPatterns": {
+      "type": "array",
+      "description": "Patterns that should NOT be used",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Regex or description to match"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why this is forbidden"
+          },
+          "alternative": {
+            "type": "string",
+            "description": "What to use instead"
+          }
+        }
+      },
+      "examples": [
+        {
+          "pattern": "eval\\(",
+          "reason": "Security risk - arbitrary code execution",
+          "alternative": "Use JSON.parse or a proper parser"
+        },
+        {
+          "pattern": "any",
+          "reason": "Type safety - avoid TypeScript any type",
+          "alternative": "Use proper types or unknown"
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0",
+      "metadata": {
+        "name": "messaging-platform",
+        "description": "Real-time messaging application"
+      },
+      "services": {
+        "auth": {
+          "location": "backend/auth/",
+          "responsibilities": ["login", "session validation", "token refresh"],
+          "reuseRequired": true,
+          "apis": [
+            { "name": "AuthService", "type": "graphql", "endpoint": "/graphql" }
+          ]
+        },
+        "messaging": {
+          "location": "backend/services/messaging/",
+          "responsibilities": ["send message", "fetch history", "mark read"],
+          "reuseRequired": true,
+          "dependencies": ["auth", "notifications"]
+        }
+      },
+      "utilities": [
+        {
+          "location": "backend/utils/errors.go",
+          "purpose": "Error handling and wrapping with context",
+          "exports": ["WrapError", "NewValidationError", "IsNotFound"],
+          "reuseRequired": true
+        }
+      ],
+      "patterns": [
+        {
+          "name": "service-layer",
+          "description": "All business logic lives in services, not in handlers",
+          "example": "backend/services/",
+          "whenToUse": "Always create new features in service layer"
+        }
+      ],
+      "conventions": {
+        "naming": {
+          "files": "kebab-case",
+          "variables": "camelCase",
+          "constants": "UPPER_SNAKE_CASE"
+        },
+        "structure": {
+          "groupBy": "layer",
+          "maxFileLines": 500,
+          "maxFunctionLines": 50
+        }
+      }
+    }
+  ]
+}
