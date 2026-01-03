@@ -1,3 +1,6 @@
 [submodule "agents/every"]
 	path = agents/every
 	url = https://github.com/EveryInc/compound-engineering-plugin
+[submodule "agents/cc-stack-agents"]
+	path = agents/cc-stack-agents
+	url = https://github.com/jovermier/cc-stack-agents.git

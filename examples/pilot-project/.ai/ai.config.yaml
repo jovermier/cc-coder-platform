@@ -1,0 +1,51 @@
+# AI Development Platform Configuration
+# Example configuration for a pilot project
+
+# Platform repository reference
+platform:
+  repo: ai-dev-platform
+  version: main
+
+# Technology stack
+stack:
+  # Frontend framework
+  frontend: nextjs
+
+  # Backend framework
+  backend: go
+
+  # API style
+  api: graphql
+
+  # Database
+  database: postgresql
+
+# Development rules
+rules:
+  # Reuse existing code before creating new
+  reuseBeforeCreate: true
+
+  # Require architecture plan before implementation
+  requireArchitecturePlan: true
+
+  # Require Playwright tests for new features
+  requirePlaywrightTests: true
+
+  # Run AI review before PR merge
+  requireAIReview: true
+
+# Testing configuration
+testing:
+  # E2E testing framework
+  e2e: playwright
+
+  # Unit testing framework (auto-detected)
+  unit: auto
+
+# CI/CD integration
+ci:
+  # Enable AI PR checks
+  enabled: true
+
+  # Platform workflow ref
+  workflowRef: main

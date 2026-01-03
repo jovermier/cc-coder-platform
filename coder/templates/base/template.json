@@ -1,0 +1,80 @@
+{
+  "name": "AI-Enabled Workspace",
+  "description": "Coder workspace with AI development platform pre-configured. Includes custom agents for Next.js, Go, and GraphQL review, plus Playwright E2E test generation.",
+  "version": "1.0.0",
+  "icon": "/icon/ai-dev.svg",
+
+  "owner": {
+    "name": "AI Dev Platform",
+    "email": "platform@example.com"
+  },
+
+  "scripts": {
+    "bootstrap": {
+      "command": "/.coder/bootstrap.sh",
+      "runOn": "create",
+      "timeout": 300
+    },
+    "update-platform": {
+      "command": "cd ~/.ai-platform && git pull",
+      "description": "Update AI platform to latest version"
+    }
+  },
+
+  "environment": {
+    "AI_PLATFORM_REPO": "ai-dev-platform",
+    "AI_PLATFORM_VERSION": "main",
+    "AI_PLATFORM_PATH": "{{ .Home }}/.ai-platform",
+    "WORKSPACE_PATH": "{{ .Workspace }}",
+    "SKIP_CLAUDE_SETUP": "false"
+  },
+
+  "requirements": {
+    "node": ">=18.0.0",
+    "go": ">=1.21.0",
+    "docker": true
+  },
+
+  "features": {
+    "aiAgents": {
+      "enabled": true,
+      "agents": [
+        "nextjs-reviewer",
+        "go-reviewer",
+        "graphql-reviewer",
+        "playwright-generator"
+      ]
+    },
+    "ciIntegration": {
+      "enabled": true,
+      "platform": "github-actions"
+    },
+    "testing": {
+      "e2e": "playwright",
+      "helpers": true
+    }
+  },
+
+  "services": {
+    "postgres": {
+      "enabled": false,
+      "optional": true
+    },
+    "redis": {
+      "enabled": false,
+      "optional": true
+    }
+  },
+
+  "ports": {
+    "web": 3000,
+    "api": 8080,
+    "graphql": 4000
+  },
+
+  "documentation": {
+    "setup": "https://github.com/ai-dev-platform/docs/setup",
+    "usage": "https://github.com/ai-dev-platform/docs/usage",
+    "troubleshooting": "https://github.com/ai-dev-platform/docs/troubleshooting"
+  }
+}

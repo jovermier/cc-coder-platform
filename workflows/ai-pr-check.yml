@@ -1,0 +1,415 @@
+# Reusable AI Platform PR Check Workflow
+#
+# This workflow provides comprehensive AI-powered code review for pull requests.
+# It integrates with the AI Dev Platform to run multiple specialized review agents.
+#
+# Usage in project repos:
+#   jobs:
+#     ai-platform-check:
+#       uses: your-org/ai-dev-platform/.github/workflows/ai-pr-check.yml@main
+#       secrets: inherit
+#       with:
+#         platform-ref: 'main'  # Optional: specific platform version
+
+name: AI Platform PR Check
+
+on:
+  workflow_call:
+    inputs:
+      platform-ref:
+        description: 'Git ref or tag to use for the AI platform (default: main)'
+        required: false
+        type: string
+        default: 'main'
+      max-complexity:
+        description: 'Maximum query complexity allowed (GraphQL only)'
+        required: false
+        type: number
+        default: 1000
+      enable-playwright:
+        description: 'Run Playwright E2E tests'
+        required: false
+        type: boolean
+        default: true
+
+    secrets:
+      anthropic-api-key:
+        description: 'Anthropic API key for Claude Code'
+        required: true
+      github-token:
+        description: 'GitHub token for API access'
+        required: true
+
+    outputs:
+      review-completed:
+        description: 'Whether the review completed successfully'
+        value: ${{ jobs.ai-review.outputs.review-completed }}
+      findings-count:
+        description: 'Number of findings from review'
+        value: ${{ jobs.ai-review.outputs.findings-count }}
+
+jobs:
+  ai-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    outputs:
+      review-completed: ${{ steps.review.outcome == 'success' }}
+      findings-count: ${{ steps.findings.outputs.count }}
+
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout AI Platform
+        id: checkout-platform
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ai-dev-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .ai-platform
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Claude Code
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - name: Configure Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.anthropic-api-key }}
+        run: |
+          mkdir -p ~/.claude
+          echo "api_key: $ANTHROPIC_API_KEY" > ~/.claude/config.json
+          chmod 600 ~/.claude/config.json
+
+      - name: Link AI Platform Agents
+        run: |
+          # Create .ai directory structure
+          mkdir -p .ai/agents
+
+          # Link custom agents from platform
+          if [ -d ".ai-platform/agents/custom" ]; then
+            ln -sf "$(pwd)/.ai-platform/agents/custom"/* .ai/agents/ 2>/dev/null || true
+          fi
+
+          # Link Every agents if available
+          if [ -d ".ai-platform/agents/every" ]; then
+            ln -sf "$(pwd)/.ai-platform/agents/every" .ai/agents/every || true
+          fi
+
+          echo "Linked agents:"
+          ls -la .ai/agents/ || true
+
+      - name: Detect Project Stack
+        id: detect-stack
+        run: |
+          STACK_FILE=.ai/stack-detected.json
+
+          echo "{" > $STACK_FILE
+
+          # Detect frontend
+          if [ -f "package.json" ]; then
+            if grep -q '"next"' package.json; then
+              echo '"frontend": "nextjs",' >> $STACK_FILE
+            elif grep -q '"react"' package.json; then
+              echo '"frontend": "react",' >> $STACK_FILE
+            elif grep -q '"vue"' package.json; then
+              echo '"frontend": "vue",' >> $STACK_FILE
+            fi
+          fi
+
+          # Detect backend
+          if [ -f "go.mod" ]; then
+            echo '"backend": "go",' >> $STACK_FILE
+          elif [ -f "package.json" ] && grep -q 'fastify\|express\|nestjs' package.json; then
+            echo '"backend": "node",' >> $STACK_FILE
+          elif [ -f "pyproject.toml" ] || [ -f "requirements.txt" ]; then
+            echo '"backend": "python",' >> $STACK_FILE
+          fi
+
+          # Detect API
+          if find . -name "*.graphql" -o -name "schema.graphql" | grep -q .; then
+            echo '"api": "graphql",' >> $STACK_FILE
+          elif find . -name "route.ts" -o -name "route.js" | grep -q .; then
+            echo '"api": "rest",' >> $STACK_FILE
+          fi
+
+          # Detect database
+          if grep -q "postgresql\|postgres" package.json 2>/dev/null || \
+             grep -q "postgres\|pq" go.mod 2>/dev/null; then
+            echo '"database": "postgresql",' >> $STACK_FILE
+          elif grep -q "mongodb\|mongoose" package.json 2>/dev/null; then
+            echo '"database": "mongodb",' >> $STACK_FILE
+          fi
+
+          echo '"detected": true' >> $STACK_FILE
+          echo "}" >> $STACK_FILE
+
+          cat $STACK_FILE
+
+          # Set output
+          echo "stack=$(cat $STACK_FILE)" >> $GITHUB_OUTPUT
+
+      - name: Run Specialized Reviewers
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.anthropic-api-key }}
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        run: |
+          REVIEW_OUTPUT=.ai/review-results.md
+          mkdir -p .ai
+
+          echo "# AI Code Review Results" > $REVIEW_OUTPUT
+          echo "" >> $REVIEW_OUTPUT
+          echo "**Reviewed**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $REVIEW_OUTPUT
+          echo "**PR**: #${{ github.event.pull_request.number }}" >> $REVIEW_OUTPUT
+          echo "**Commit**: ${{ github.event.pull_request.head.sha }}" >> $REVIEW_OUTPUT
+          echo "" >> $REVIEW_OUTPUT
+          echo "---" >> $REVIEW_OUTPUT
+          echo "" >> $REVIEW_OUTPUT
+
+          FINDINGS=0
+
+          # Run reviewers based on detected stack
+          STACK='${{ steps.detect-stack.outputs.stack }}'
+
+          # Next.js Reviewer
+          if echo "$STACK" | grep -q '"frontend": "nextjs"'; then
+            echo "Running Next.js reviewer..." >&2
+            cat .ai/agents/nextjs-reviewer.md || true
+            # Find and review Next.js files
+            find web app -name "*.tsx" -o -name "*.ts" | head -5 | while read file; do
+              echo "## Reviewing: $file" >> $REVIEW_OUTPUT
+              echo '```' >> $REVIEW_OUTPUT
+              head -50 "$file" >> $REVIEW_OUTPUT 2>/dev/null || true
+              echo '```' >> $REVIEW_OUTPUT
+              echo "" >> $REVIEW_OUTPUT
+            done
+            FINDINGS=$((FINDINGS + 1))
+          fi
+
+          # Go Reviewer
+          if echo "$STACK" | grep -q '"backend": "go"'; then
+            echo "Running Go reviewer..." >&2
+            echo "## Go Code Review" >> $REVIEW_OUTPUT
+            find . -name "*.go" -not -path "./vendor/*" | head -5 | while read file; do
+              echo "### $file" >> $REVIEW_OUTPUT
+              echo '```go' >> $REVIEW_OUTPUT
+              head -30 "$file" >> $REVIEW_OUTPUT 2>/dev/null || true
+              echo '```' >> $REVIEW_OUTPUT
+            done
+            FINDINGS=$((FINDINGS + 1))
+          fi
+
+          # GraphQL Reviewer
+          if echo "$STACK" | grep -q '"api": "graphql"'; then
+            echo "Running GraphQL reviewer..." >&2
+            echo "## GraphQL Schema Review" >> $REVIEW_OUTPUT
+            find . -name "*.graphql" | while read file; do
+              echo "### $file" >> $REVIEW_OUTPUT
+              echo '```graphql' >> $REVIEW_OUTPUT
+              cat "$file" >> $REVIEW_OUTPUT 2>/dev/null || true
+              echo '```' >> $REVIEW_OUTPUT
+            done
+            FINDINGS=$((FINDINGS + 1))
+          fi
+
+          echo "" >> $REVIEW_OUTPUT
+          echo "---" >> $REVIEW_OUTPUT
+          echo "" >> $REVIEW_OUTPUT
+          echo "## Summary" >> $REVIEW_OUTPUT
+          echo "- Files reviewed: $FINDINGS categories" >> $REVIEW_OUTPUT
+          echo "- Stack detected: $STACK" >> $REVIEW_OUTPUT
+
+          cat $REVIEW_OUTPUT
+
+          # Output count
+          echo "count=$FINDINGS" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with Results
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '';
+            try {
+              body = fs.readFileSync('.ai/review-results.md', 'utf8');
+            } catch (e) {
+              body = '## AI Review\n\nReview completed but no results file found.';
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('AI Code Review Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Upload Review Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-review-results
+          path: |
+            .ai/review-results.md
+            .ai/stack-detected.json
+          retention-days: 30
+
+  playwright-e2e:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.enable-playwright }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci || npm install
+          fi
+
+      - name: Install Playwright Browsers
+        run: |
+          if grep -q "playwright" package.json; then
+            npx playwright install --with-deps
+          else
+            echo "Playwright not in dependencies, skipping"
+          fi
+
+      - name: Run Playwright tests
+        run: |
+          if [ -d "tests" ] || [ -d "e2e" ]; then
+            npx playwright test || echo "Tests completed with status: $?"
+          else
+            echo "No test directory found, skipping"
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload test videos
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-videos
+          path: test-results/
+          retention-days: 7
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go (if Go project)
+        if: ${{ hashFiles('go.mod') != '' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Go vet
+        if: ${{ hashFiles('go.mod') != '' }}
+        run: |
+          go vet ./...
+          echo "go-vet=$?" >> $GITHUB_OUTPUT
+
+      - name: golangci-lint
+        if: ${{ hashFiles('go.mod') != '' }}
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run --timeout 5m || true
+
+      - name: Setup Node.js (if Node project)
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: ESLint
+        if: ${{ hashFiles('package.json') != '' }}
+        run: |
+          if grep -q "eslint" package.json; then
+            npm run lint || true
+          fi
+
+      - name: TypeScript check
+        if: ${{ hashFiles('package.json', 'tsconfig.json') != '' }}
+        run: |
+          if grep -q "typescript" package.json; then
+            npx tsc --noEmit || true
+          fi

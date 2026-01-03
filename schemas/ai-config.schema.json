@@ -4,22 +4,30 @@
   "title": "AI Platform Configuration",
   "description": "Configuration file for AI platform integration in project repositories",
   "type": "object",
-  "required": ["platformRepo", "stack"],
+  "additionalProperties": false,
+  "required": ["platform", "stack"],
   "properties": {
-    "platformRepo": {
-      "type": "string",
-      "format": "uri",
-      "description": "GitHub repository URL for the central AI platform",
-      "examples": [
-        "github.com/mycritters/ai-dev-platform",
-        "https://github.com/mycritters/ai-dev-platform"
-      ]
-    },
-    "platformVersion": {
-      "type": "string",
-      "description": "Version, branch, or tag to use from the platform repository",
-      "default": "main",
-      "examples": ["main", "v1.0.0", "develop"]
+    "platform": {
+      "type": "object",
+      "description": "Platform repository reference",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "GitHub repository URL or path for the central AI platform",
+          "examples": [
+            "ai-dev-platform",
+            "github.com/mycritters/ai-dev-platform",
+            "https://github.com/mycritters/ai-dev-platform"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "description": "Version, branch, or tag to use from the platform repository",
+          "default": "main",
+          "examples": ["main", "v1.0.0", "develop"]
+        }
+      },
+      "required": ["repo"]
     },
     "stack": {
       "type": "object",
@@ -44,23 +52,9 @@
           "type": "string",
           "enum": ["postgresql", "mysql", "mongodb", "sqlite", "redis", "dynamodb"],
           "description": "Primary database"
-        },
-        "testing": {
-          "type": "object",
-          "properties": {
-            "e2e": {
-              "type": "string",
-              "enum": ["playwright", "cypress", "puppeteer", "selenium"],
-              "description": "E2E testing framework"
-            },
-            "unit": {
-              "type": "string",
-              "enum": ["jest", "vitest", "mocha", "pytest", "go-test"],
-              "description": "Unit testing framework"
-            }
-          }
         }
-      }
+      },
+      "required": ["frontend", "backend"]
     },
     "rules": {
       "type": "object",
@@ -81,7 +75,7 @@
           "default": true,
           "description": "Require Playwright E2E tests for all feature changes"
         },
-        "requireCodeReview": {
+        "requireAIReview": {
           "type": "boolean",
           "default": true,
           "description": "Require AI code review before merging"
@@ -109,7 +103,8 @@
               "code-simplicity-reviewer",
               "nextjs-reviewer",
               "go-reviewer",
-              "graphql-reviewer"
+              "graphql-reviewer",
+              "playwright-generator"
             ]
           },
           "description": "List of enabled reviewer agents"
@@ -121,62 +116,47 @@
         }
       }
     },
-    "paths": {
+    "testing": {
       "type": "object",
-      "description": "Custom path configurations for the project",
+      "description": "Testing configuration",
       "properties": {
-        "frontend": {
+        "e2e": {
           "type": "string",
-          "description": "Path to frontend code",
-          "default": "frontend/ or web/"
+          "enum": ["playwright", "cypress", "puppeteer", "selenium"],
+          "description": "E2E testing framework",
+          "default": "playwright"
         },
-        "backend": {
+        "unit": {
           "type": "string",
-          "description": "Path to backend code",
-          "default": "backend/ or api/"
-        },
-        "tests": {
-          "type": "string",
-          "description": "Path to test files",
-          "default": "tests/ or __tests__/"
+          "enum": ["jest", "vitest", "mocha", "pytest", "go-test", "auto"],
+          "description": "Unit testing framework (auto-detect if not specified)",
+          "default": "auto"
         }
       }
     },
-    "integrations": {
+    "ci": {
       "type": "object",
-      "description": "External service integrations",
+      "description": "CI/CD integration settings",
       "properties": {
-        "github": {
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
-            "autoMerge": {
-              "type": "boolean",
-              "default": false,
-              "description": "Allow AI to auto-merge passing PRs"
-            }
-          }
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable CI integration"
         },
-        "slack": {
-          "type": "object",
-          "properties": {
-            "webhook": {
-              "type": "string",
-              "format": "uri",
-              "description": "Slack webhook for PR notifications"
-            }
-          }
+        "workflowRef": {
+          "type": "string",
+          "description": "Git ref for reusable workflows (branch or tag)",
+          "default": "main"
         }
       }
     }
   },
   "examples": [
     {
-      "platformRepo": "github.com/mycritters/ai-dev-platform",
-      "platformVersion": "main",
+      "platform": {
+        "repo": "ai-dev-platform",
+        "version": "main"
+      },
       "stack": {
         "frontend": "nextjs",
         "backend": "go",
@@ -186,7 +166,8 @@
       "rules": {
         "reuseBeforeCreate": true,
         "requireArchitecturePlan": true,
-        "requirePlaywrightTests": true
+        "requirePlaywrightTests": true,
+        "requireAIReview": true
       },
       "reviewers": {
         "enabled": [
@@ -194,7 +175,16 @@
           "go-reviewer",
           "graphql-reviewer",
           "security-sentinel"
-        ]
+        ],
+        "parallel": true
+      },
+      "testing": {
+        "e2e": "playwright",
+        "unit": "auto"
+      },
+      "ci": {
+        "enabled": true,
+        "workflowRef": "main"
       }
     }
   ]

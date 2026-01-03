@@ -1,0 +1,35 @@
+# Repository Structure Map
+# Example configuration for a pilot project
+
+# Services - major backend components
+services:
+  # Example service
+  example:
+    location: services/example
+    responsibilities:
+      - greeting functionality
+      - data processing
+    reuseRequired: false
+
+# Utilities - shared helper functions
+utilities:
+  # Add your utilities here
+  # Example:
+  # - location: pkg/database
+  #   purpose: Database connection and query helpers
+
+# Patterns - common patterns in the codebase
+patterns:
+  - name: error-handling
+    description: All errors are wrapped with context
+    example: |
+      if err != nil {
+        return "", fmt.Errorf("processing failed: %w", err)
+      }
+
+  - name: service-constructor
+    description: Services use NewService() constructor pattern
+    example: |
+      func NewExampleService() *ExampleService {
+        return &ExampleService{name: "example"}
+      }

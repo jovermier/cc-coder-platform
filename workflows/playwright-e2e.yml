@@ -1,0 +1,373 @@
+# Reusable Playwright E2E Test Workflow
+#
+# This workflow runs Playwright end-to-end tests across multiple browsers
+# and viewport sizes. It includes test reporting and artifact retention.
+#
+# Usage in project repos:
+#   jobs:
+#     e2e-tests:
+#       uses: your-org/ai-dev-platform/.github/workflows/playwright-e2e.yml@main
+#       secrets: inherit
+#       with:
+#         test-command: 'npx playwright test'
+#         base-url: 'http://localhost:3000'
+
+name: Playwright E2E Tests
+
+on:
+  workflow_call:
+    inputs:
+      test-command:
+        description: 'Command to run Playwright tests'
+        required: false
+        type: string
+        default: 'npx playwright test'
+      base-url:
+        description: 'Base URL for tests'
+        required: false
+        type: string
+        default: 'http://localhost:3000'
+      install-deps:
+        description: 'Command to install dependencies'
+        required: false
+        type: string
+        default: 'npm ci'
+      start-server:
+        description: 'Command to start the dev server'
+        required: false
+        type: string
+        default: 'npm run dev'
+      workers:
+        description: 'Number of parallel workers'
+        required: false
+        type: number
+        default: 4
+      shard:
+        description: 'Split tests into shards (e.g., 4/1 for shard 1 of 4)'
+        required: false
+        type: string
+        default: ''
+
+    secrets:
+      github-token:
+        description: 'GitHub token for PR comments'
+        required: true
+      test-username:
+        description: 'Username for authenticated tests'
+        required: false
+      test-password:
+        description: 'Password for authenticated tests'
+        required: false
+
+    outputs:
+      result:
+        description: 'Test result (success/failure)'
+        value: ${{ jobs.tests.outputs.result }}
+      passed:
+        description: 'Number of passed tests'
+        value: ${{ jobs.tests.outputs.passed }}
+      failed:
+        description: 'Number of failed tests'
+        value: ${{ jobs.tests.outputs.failed }}
+      flaky:
+        description: 'Number of flaky tests'
+        value: ${{ jobs.tests.outputs.flaky }}
+
+jobs:
+  tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    outputs:
+      result: ${{ steps.results.outputs.result }}
+      passed: ${{ steps.results.outputs.passed }}
+      failed: ${{ steps.results.outputs.failed }}
+      flaky: ${{ steps.results.outputs.flaky }}
+
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/playwright-browsers
+      BASE_URL: ${{ inputs.base-url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            pnpm-lock.yaml
+            yarn.lock
+
+      - name: Install dependencies
+        run: |
+          case "${{ inputs.install-deps }}" in
+            *pnpm*)
+              corepack enable pnpm && pnpm install --frozen-lockfile
+              ;;
+            *yarn*)
+              yarn install --frozen-lockfile
+              ;;
+            *)
+              npm ci
+              ;;
+          esac
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Setup Test Environment
+        env:
+          TEST_USERNAME: ${{ secrets.test-username }}
+          TEST_PASSWORD: ${{ secrets.test-password }}
+        run: |
+          mkdir -p tests/.auth
+          echo "$TEST_USERNAME" > tests/.auth/username.txt
+          echo "$TEST_PASSWORD" > tests/.auth/password.txt
+
+      - name: Start Development Server
+        run: |
+          mkdir -p logs
+          ${{ inputs.start-server }} > logs/server.log 2>&1 &
+          echo $! > logs/server.pid
+
+          # Wait for server to be ready
+          timeout 60 bash -c 'until curl -sSf ${{ inputs.base-url }} > /dev/null; do sleep 2; done' || {
+            cat logs/server.log
+            echo "Server failed to start"
+            exit 1
+          }
+
+      - name: Run Playwright Tests
+        id: run-tests
+        env:
+          CI: true
+          PLAYWRIGHT_HTML_REPORT: playwright-report
+        run: |
+          if [ -n "${{ inputs.shard }}" ]; then
+            SHARD_ARG="--shard=${{ inputs.shard }}"
+          else
+            SHARD_ARG=""
+          fi
+
+          ${{ inputs.test-command }} \
+            --workers=${{ inputs.workers }} \
+            $SHARD_ARG \
+            --reporter=html,list \
+            || TEST_EXIT_CODE=$?
+
+          if [ -n "$TEST_EXIT_CODE" ]; then
+            echo "exit_code=$TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+            exit $TEST_EXIT_CODE
+          fi
+
+      - name: Parse Test Results
+        id: results
+        run: |
+          REPORT_FILE=playwright-report/results.json
+
+          if [ -f "$REPORT_FILE" ]; then
+            PASSED=$(jq '[.suites[].specs[].tests[] | select(.status == "passed")] | length' $REPORT_FILE 2>/dev/null || echo "0")
+            FAILED=$(jq '[.suites[].specs[].tests[] | select(.status == "failed")] | length' $REPORT_FILE 2>/dev/null || echo "0")
+            FLAKY=$(jq '[.suites[].specs[].tests[] | select(.status == "flaky")] | length' $REPORT_FILE 2>/dev/null || echo "0")
+
+            echo "passed=$PASSED" >> $GITHUB_OUTPUT
+            echo "failed=$FAILED" >> $GITHUB_OUTPUT
+            echo "flaky=$FLAKY" >> $GITHUB_OUTPUT
+
+            if [ "$FAILED" -gt 0 ]; then
+              echo "result=failure" >> $GITHUB_OUTPUT
+            else
+              echo "result=success" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "result=unknown" >> $GITHUB_OUTPUT
+            echo "passed=0" >> $GITHUB_OUTPUT
+            echo "failed=0" >> $GITHUB_OUTPUT
+            echo "flaky=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop Development Server
+        if: always()
+        run: |
+          if [ -f logs/server.pid ]; then
+            kill $(cat logs/server.pid) 2>/dev/null || true
+          fi
+
+      - name: Upload Test Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
+
+      - name: Upload Failed Screenshots
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-screenshots
+          path: test-results/
+          retention-days: 7
+
+      - name: Upload Server Logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-logs
+          path: logs/
+          retention-days: 3
+
+      - name: Comment PR with Test Results
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          PASSED: ${{ steps.results.outputs.passed }}
+          FAILED: ${{ steps.results.outputs.failed }}
+          FLAKY: ${{ steps.results.outputs.flaky }}
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('## E2E Test Results')
+            );
+
+            const emoji = process.env.FAILED > 0 ? '❌' : '✅';
+            const summary = `
+            ## E2E Test Results ${emoji}
+            | Metric | Count |
+            |--------|-------|
+            | ✅ Passed | ${process.env.PASSED} |
+            | ❌ Failed | ${process.env.FAILED} |
+            | ⚠️ Flaky | ${process.env.FLAKY} |
+            `;
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: summary
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: summary
+              });
+            }
+
+      - name: Publish Test Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: E2E Tests
+          path: 'playwright-report/results.json'
+          reporter: playwright-junit
+          max-annotations: 50
+          fail-on-error: true
+
+  matrix-tests:
+    name: Matrix Tests
+    runs-on: ubuntu-latest
+    if: ${{ inputs.shard == '' }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: ${{ inputs.install-deps }}
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Start Development Server
+        run: |
+          ${{ inputs.start-server }} > /tmp/server.log 2>&1 &
+          timeout 60 bash -c 'until curl -sSf ${{ inputs.base-url }} > /dev/null; do sleep 2; done'
+
+      - name: Run Sharded Tests
+        run: ${{ inputs.test-command }} --shard=${{ matrix.shard }}
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results-shard-${{ matrix.shard }}
+          path: test-results/
+
+  visual-regression:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Base Branch
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          git checkout origin/${{ github.base_ref }} -b base-branch
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: ${{ inputs.install-deps }}
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Update Snapshots (Base Branch)
+        run: npx playwright test --update-snapshots || true
+
+      - name: Checkout PR Branch
+        run: git checkout ${{ github.head_ref }}
+
+      - name: Run Visual Regression Tests
+        run: npx playwright test
+
+      - name: Upload Visual Diff Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-diff-report
+          path: playwright-report/
